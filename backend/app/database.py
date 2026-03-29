@@ -1,9 +1,9 @@
+import certifi
 from pymongo import MongoClient
 from pymongo.database import Database
 
 from app.config import settings
 
-# Lazy connection — don't connect at import time
 _client: MongoClient | None = None
 _db: Database | None = None
 
@@ -13,8 +13,9 @@ def _get_client() -> MongoClient:
     if _client is None:
         _client = MongoClient(
             settings.MONGODB_URL,
-            serverSelectionTimeoutMS=5000,
-            connectTimeoutMS=5000,
+            tlsCAFile=certifi.where(),
+            serverSelectionTimeoutMS=10000,
+            connectTimeoutMS=10000,
         )
     return _client
 
@@ -28,12 +29,16 @@ def get_db() -> Database:
 
 def init_indexes() -> None:
     """Create indexes for performance."""
-    db = get_db()
-    db.users.create_index("email", unique=True)
-    db.tasks.create_index("user_id")
-    db.tasks.create_index("risk_level")
-    db.tasks.create_index("status")
-    db.tasks.create_index("deadline")
-    db.activity_log.create_index("task_id")
-    db.notifications.create_index([("task_id", 1), ("is_read", 1)])
-    db.risk_snapshots.create_index("snapshot_at")
+    try:
+        db = get_db()
+        db.users.create_index("email", unique=True)
+        db.tasks.create_index("user_id")
+        db.tasks.create_index("risk_level")
+        db.tasks.create_index("status")
+        db.tasks.create_index("deadline")
+        db.activity_log.create_index("task_id")
+        db.notifications.create_index([("task_id", 1), ("is_read", 1)])
+        db.risk_snapshots.create_index("snapshot_at")
+        print("MongoDB indexes created successfully")
+    except Exception as e:
+        print(f"Warning: MongoDB index creation failed: {e}")
