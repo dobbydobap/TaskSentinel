@@ -210,15 +210,26 @@ compute_risk(task) -> "red" | "yellow" | "green"
 
 ---
 
-## Screenshots
+## How It Works
 
-The dashboard features:
-- Staggered entry animations with elastic bounce
-- Interactive donut chart with hover effects
-- Speedometer-style productivity gauge with arc sweep animation
-- Calendar streak with highlighted completion days
-- Quick action buttons on task cards (mark done, start working)
-- Dark mode with smooth transitions
+```
+You add tasks with deadlines and priorities
+         ↓
+Every 10 minutes, Google Apps Script triggers a sweep
+         ↓
+Backend recalculates risk for ALL active tasks:
+  - "DB Assignment" due in 12h → RED (at risk)
+  - "React Project" no activity for 3 days → YELLOW (warning)
+  - "OS Notes" just created → GREEN (on track)
+         ↓
+Risk changes generate in-app notifications
+         ↓
+Critical tasks trigger email alerts via Apps Script
+         ↓
+Dashboard updates: risk chart, productivity score, activity feed
+```
+
+You don't check anything. The system does the thinking.
 
 ---
 
