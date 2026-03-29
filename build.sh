@@ -14,8 +14,17 @@ echo "=== Building Next.js ==="
 NEXT_PUBLIC_API_URL="/api" npm run build
 
 echo "=== Copying static files to standalone ==="
-cp -r public .next/standalone/frontend/public 2>/dev/null || true
-cp -r .next/static .next/standalone/frontend/.next/static
-cd ..
+# Find the standalone directory structure
+STANDALONE_DIR=".next/standalone"
 
+# Create the static directories
+mkdir -p "$STANDALONE_DIR/.next/static"
+cp -r .next/static/* "$STANDALONE_DIR/.next/static/"
+cp -r public "$STANDALONE_DIR/public" 2>/dev/null || true
+
+echo "=== Standalone contents ==="
+ls -la "$STANDALONE_DIR/"
+ls -la "$STANDALONE_DIR/.next/" 2>/dev/null || true
+
+cd ..
 echo "=== Build complete ==="
