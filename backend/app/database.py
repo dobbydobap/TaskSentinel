@@ -3,16 +3,32 @@ from pymongo.database import Database
 
 from app.config import settings
 
-client: MongoClient = MongoClient(settings.MONGODB_URL)
-db: Database = client[settings.MONGODB_DB_NAME]
+# Lazy connection — don't connect at import time
+_client: MongoClient | None = None
+_db: Database | None = None
+
+
+def _get_client() -> MongoClient:
+    global _client
+    if _client is None:
+        _client = MongoClient(
+            settings.MONGODB_URL,
+            serverSelectionTimeoutMS=5000,
+            connectTimeoutMS=5000,
+        )
+    return _client
 
 
 def get_db() -> Database:
-    return db
+    global _db
+    if _db is None:
+        _db = _get_client()[settings.MONGODB_DB_NAME]
+    return _db
 
 
 def init_indexes() -> None:
     """Create indexes for performance."""
+    db = get_db()
     db.users.create_index("email", unique=True)
     db.tasks.create_index("user_id")
     db.tasks.create_index("risk_level")

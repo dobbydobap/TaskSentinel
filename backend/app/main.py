@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -10,7 +11,8 @@ from app.routers import auth, dashboard, monitoring, notifications, tasks
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_indexes()
+    # Run index creation in background so it doesn't block port binding
+    asyncio.get_event_loop().run_in_executor(None, init_indexes)
     yield
 
 
