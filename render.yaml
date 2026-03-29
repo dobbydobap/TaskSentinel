@@ -1,11 +1,9 @@
 services:
-  # Backend API
   - type: web
-    name: tasksentinel-api
+    name: tasksentinel
     runtime: python
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
+    buildCommand: bash build.sh
+    startCommand: bash start.sh
     envVars:
       - key: MONGODB_URL
         sync: false
@@ -15,20 +13,7 @@ services:
         generateValue: true
       - key: MONITOR_API_KEY
         generateValue: true
-      - key: FRONTEND_URL
-        sync: false
       - key: PYTHON_VERSION
         value: "3.11.9"
-
-  # Frontend
-  - type: web
-    name: tasksentinel-web
-    runtime: node
-    rootDir: frontend
-    buildCommand: npm install && npm run build
-    startCommand: npx next start -p $PORT
-    envVars:
-      - key: NEXT_PUBLIC_API_URL
-        sync: false
       - key: NODE_VERSION
         value: "18.17.0"
