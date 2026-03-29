@@ -4,14 +4,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.database import Base, engine
-import app.models  # noqa: F401 — ensure all models are loaded for relationship resolution
+from app.database import init_indexes
 from app.routers import auth, dashboard, monitoring, notifications, tasks
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    init_indexes()
     yield
 
 

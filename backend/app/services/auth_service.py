@@ -1,12 +1,12 @@
-from datetime import datetime, timedelta, timezone
+import uuid
+from datetime import timedelta, timezone, datetime
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from app.config import settings
-from app.models.user import User
-from app.schemas.auth import RegisterRequest
+from app.utils.time_helpers import utc_now
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -45,28 +45,30 @@ def decode_token(token: str) -> dict | None:
         return None
 
 
-def register_user(db: Session, data: RegisterRequest) -> User:
-    user = User(
-        email=data.email,
-        hashed_password=hash_password(data.password),
-        name=data.name,
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
+def register_user(db: Database, email: str, password: str, name: str) -> dict:
+    now = utc_now()
+    user = {
+        "_id": str(uuid.uuid4()),
+        "email": email,
+        "hashed_password": hash_password(password),
+        "name": name,
+        "phone": None,
+        "created_at": now,
+    }
+    db.users.insert_one(user)
     return user
 
 
-def authenticate_user(db: Session, email: str, password: str) -> User | None:
-    user = db.query(User).filter(User.email == email).first()
-    if not user or not verify_password(password, user.hashed_password):
+def authenticate_user(db: Database, email: str, password: str) -> dict | None:
+    user = db.users.find_one({"email": email})
+    if not user or not verify_password(password, user["hashed_password"]):
         return None
     return user
 
 
-def get_user_by_id(db: Session, user_id: str) -> User | None:
-    return db.query(User).filter(User.id == user_id).first()
+def get_user_by_id(db: Database, user_id: str) -> dict | None:
+    return db.users.find_one({"_id": user_id})
 
 
-def get_user_by_email(db: Session, email: str) -> User | None:
-    return db.query(User).filter(User.email == email).first()
+def get_user_by_email(db: Database, email: str) -> dict | None:
+    return db.users.find_one({"email": email})

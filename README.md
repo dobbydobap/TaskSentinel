@@ -55,8 +55,8 @@ Unlike traditional to-do apps where you manage everything manually, TaskSentinel
 | Layer | Technology |
 |-------|-----------|
 | **Frontend** | Next.js 14 (App Router), TypeScript, CSS Modules |
-| **Backend** | FastAPI, Python 3.10+, Pydantic, SQLAlchemy |
-| **Database** | SQLite (WAL mode, upgradeable to PostgreSQL) |
+| **Backend** | FastAPI, Python 3.10+, Pydantic, PyMongo |
+| **Database** | MongoDB Atlas (cloud-hosted) |
 | **Auth** | JWT (python-jose), bcrypt password hashing |
 | **Cron** | Google Apps Script (external time-driven triggers) |
 | **Styling** | CSS Modules only (no Tailwind), CSS custom properties |
@@ -71,8 +71,8 @@ TaskSentinel/
 │   ├── app/
 │   │   ├── main.py              # FastAPI app, CORS, lifespan
 │   │   ├── config.py            # Settings via pydantic-settings
-│   │   ├── database.py          # SQLite + SQLAlchemy (WAL mode)
-│   │   ├── models/              # SQLAlchemy models (User, Task, ActivityLog, Notification, RiskSnapshot)
+│   │   ├── database.py          # MongoDB connection + indexes
+│   │   ├── models/              # (MongoDB is schemaless — schemas in schemas/)
 │   │   ├── schemas/             # Pydantic request/response schemas
 │   │   ├── routers/             # API routes (auth, tasks, monitoring, notifications, dashboard)
 │   │   ├── services/            # Business logic (risk_engine, task_service, monitor_service)
@@ -106,7 +106,7 @@ TaskSentinel/
 ```bash
 cd backend
 pip install -r requirements.txt
-cp .env.example .env        # Edit with your own SECRET_KEY
+cp .env.example .env        # Edit with your MONGODB_URL and SECRET_KEY
 python -m uvicorn app.main:app --port 8001 --reload
 ```
 

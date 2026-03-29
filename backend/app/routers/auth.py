@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Header, status
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from app.database import get_db
-from app.models.user import User
 from app.schemas.auth import (
     LoginRequest,
     PasswordChange,
@@ -37,9 +36,9 @@ def _extract_token(authorization: str = Header(...)) -> str:
 
 
 def get_current_user(
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     token: str = Depends(_extract_token),
-) -> User:
+) -> dict:
     payload = decode_token(token)
     if not payload or payload.get("type") != "access":
         raise HTTPException(
@@ -53,34 +52,44 @@ def get_current_user(
     return user
 
 
+def _user_response(user: dict) -> UserResponse:
+    return UserResponse(
+        id=user["_id"],
+        email=user["email"],
+        name=user["name"],
+        phone=user.get("phone"),
+        created_at=user["created_at"],
+    )
+
+
 @router.post("/register", response_model=TokenResponse, status_code=201)
-def register(data: RegisterRequest, db: Session = Depends(get_db)):
+def register(data: RegisterRequest, db: Database = Depends(get_db)):
     if get_user_by_email(db, data.email):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
         )
-    user = register_user(db, data)
+    user = register_user(db, data.email, data.password, data.name)
     return TokenResponse(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id),
+        access_token=create_access_token(user["_id"]),
+        refresh_token=create_refresh_token(user["_id"]),
     )
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(data: LoginRequest, db: Session = Depends(get_db)):
+def login(data: LoginRequest, db: Database = Depends(get_db)):
     user = authenticate_user(db, data.email, data.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         )
     return TokenResponse(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id),
+        access_token=create_access_token(user["_id"]),
+        refresh_token=create_refresh_token(user["_id"]),
     )
 
 
 @router.post("/refresh", response_model=TokenResponse)
-def refresh(data: RefreshRequest, db: Session = Depends(get_db)):
+def refresh(data: RefreshRequest, db: Database = Depends(get_db)):
     payload = decode_token(data.refresh_token)
     if not payload or payload.get("type") != "refresh":
         raise HTTPException(
@@ -92,50 +101,54 @@ def refresh(data: RefreshRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
         )
     return TokenResponse(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id),
+        access_token=create_access_token(user["_id"]),
+        refresh_token=create_refresh_token(user["_id"]),
     )
 
 
 @router.get("/me", response_model=UserResponse)
-def get_me(current_user: User = Depends(get_current_user)):
-    return current_user
+def get_me(current_user: dict = Depends(get_current_user)):
+    return _user_response(current_user)
 
 
 @router.put("/profile", response_model=UserResponse)
 def update_profile(
     data: ProfileUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
+    updates: dict = {}
     if data.name is not None:
-        current_user.name = data.name
+        updates["name"] = data.name
     if data.phone is not None:
-        current_user.phone = data.phone
-    if data.email is not None and data.email != current_user.email:
-        existing = get_user_by_email(db, data.email)
-        if existing:
+        updates["phone"] = data.phone
+    if data.email is not None and data.email != current_user["email"]:
+        if get_user_by_email(db, data.email):
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Email already in use",
+                status_code=status.HTTP_409_CONFLICT, detail="Email already in use"
             )
-        current_user.email = data.email
-    db.commit()
-    db.refresh(current_user)
-    return current_user
+        updates["email"] = data.email
+
+    if updates:
+        db.users.update_one({"_id": current_user["_id"]}, {"$set": updates})
+
+    user = get_user_by_id(db, current_user["_id"])
+    return _user_response(user)
 
 
 @router.post("/change-password")
 def change_password(
     data: PasswordChange,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
-    if not verify_password(data.current_password, current_user.hashed_password):
+    if not verify_password(data.current_password, current_user["hashed_password"]):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Current password is incorrect",
         )
-    current_user.hashed_password = hash_password(data.new_password)
-    db.commit()
+    db.users.update_one(
+        {"_id": current_user["_id"]},
+        {"$set": {"hashed_password": hash_password(data.new_password)}},
+    )
     return {"message": "Password updated successfully"}

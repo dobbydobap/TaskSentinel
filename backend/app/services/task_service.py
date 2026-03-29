@@ -1,74 +1,68 @@
 import json
+import uuid
 
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
-from app.models.activity import ActivityLog
-from app.models.task import Task
-from app.schemas.task import TaskCreate, TaskUpdate
 from app.services.risk_engine import compute_risk
 from app.utils.time_helpers import utc_now
 
 
-def _update_risk(task: Task) -> str:
-    """Recalculate and set risk_level on a task. Returns the new level."""
-    new_risk = compute_risk(
-        status=task.status,
-        priority=task.priority,
-        deadline=task.deadline,
-        last_activity_at=task.last_activity_at,
+def _update_risk(task: dict) -> str:
+    return compute_risk(
+        status=task["status"],
+        priority=task["priority"],
+        deadline=task.get("deadline"),
+        last_activity_at=task["last_activity_at"],
     )
-    task.risk_level = new_risk
-    return new_risk
 
 
 def _log_activity(
-    db: Session, task_id: str, action: str, detail: dict | None = None
+    db: Database, task_id: str, action: str, detail: dict | None = None
 ) -> None:
-    log = ActivityLog(
-        task_id=task_id,
-        action=action,
-        detail=json.dumps(detail) if detail else None,
-    )
-    db.add(log)
+    db.activity_log.insert_one({
+        "task_id": task_id,
+        "action": action,
+        "detail": json.dumps(detail) if detail else None,
+        "created_at": utc_now(),
+    })
 
 
-def create_task(db: Session, user_id: str, data: TaskCreate) -> Task:
+def create_task(db: Database, user_id: str, data: dict) -> dict:
     now = utc_now()
-    task = Task(
-        user_id=user_id,
-        title=data.title,
-        description=data.description,
-        priority=data.priority,
-        status=data.status,
-        tags=json.dumps(data.tags),
-        deadline=data.deadline,
-        last_activity_at=now,
-        created_at=now,
-        updated_at=now,
-    )
-    if data.status == "done":
-        task.completed_at = now
+    task = {
+        "_id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "title": data["title"],
+        "description": data.get("description"),
+        "priority": data.get("priority", "medium"),
+        "status": data.get("status", "todo"),
+        "risk_level": "green",
+        "tags": data.get("tags", []),
+        "deadline": data.get("deadline"),
+        "last_activity_at": now,
+        "created_at": now,
+        "updated_at": now,
+        "completed_at": now if data.get("status") == "done" else None,
+    }
 
-    _update_risk(task)
-    db.add(task)
-    db.flush()
-    _log_activity(db, task.id, "created")
-    db.commit()
-    db.refresh(task)
+    task["risk_level"] = compute_risk(
+        status=task["status"],
+        priority=task["priority"],
+        deadline=task.get("deadline"),
+        last_activity_at=task["last_activity_at"],
+    )
+
+    db.tasks.insert_one(task)
+    _log_activity(db, task["_id"], "created")
     return task
 
 
-def get_task(db: Session, task_id: str, user_id: str) -> Task | None:
-    return (
-        db.query(Task)
-        .filter(Task.id == task_id, Task.user_id == user_id)
-        .first()
-    )
+def get_task(db: Database, task_id: str, user_id: str) -> dict | None:
+    return db.tasks.find_one({"_id": task_id, "user_id": user_id})
 
 
 def list_tasks(
-    db: Session,
+    db: Database,
     user_id: str,
     status: str | None = None,
     risk: str | None = None,
@@ -78,106 +72,123 @@ def list_tasks(
     order: str = "desc",
     page: int = 1,
     size: int = 20,
-) -> tuple[list[Task], int]:
-    query = db.query(Task).filter(Task.user_id == user_id)
-
+) -> tuple[list[dict], int]:
+    query: dict = {"user_id": user_id}
     if status:
-        query = query.filter(Task.status == status)
+        query["status"] = status
     if risk:
-        query = query.filter(Task.risk_level == risk)
+        query["risk_level"] = risk
     if priority:
-        query = query.filter(Task.priority == priority)
+        query["priority"] = priority
     if tag:
-        query = query.filter(Task.tags.contains(f'"{tag}"'))
+        query["tags"] = tag
 
-    total = query.count()
+    total = db.tasks.count_documents(query)
 
-    sort_col = getattr(Task, sort, Task.created_at)
-    if order == "asc":
-        query = query.order_by(sort_col.asc())
-    else:
-        query = query.order_by(sort_col.desc())
+    sort_dir = -1 if order == "desc" else 1
+    sort_field = sort if sort in ("created_at", "deadline", "updated_at", "priority") else "created_at"
 
-    tasks = query.offset((page - 1) * size).limit(size).all()
+    tasks = list(
+        db.tasks.find(query)
+        .sort(sort_field, sort_dir)
+        .skip((page - 1) * size)
+        .limit(size)
+    )
     return tasks, total
 
 
-def update_task(db: Session, task: Task, data: TaskUpdate) -> Task:
+def update_task(db: Database, task: dict, data: dict) -> dict:
     changes = {}
-    for field, value in data.model_dump(exclude_unset=True).items():
-        old_value = getattr(task, field)
-        if field == "tags":
-            value = json.dumps(value)
-            old_value = task.tags
-        if old_value != value:
-            changes[field] = {"old": str(old_value), "new": str(value)}
-            setattr(task, field, value)
+    for field, value in data.items():
+        if value is not None:
+            old_value = task.get(field)
+            if old_value != value:
+                changes[field] = {"old": str(old_value), "new": str(value)}
 
-    if "status" in changes and data.status == "done":
-        task.completed_at = utc_now()
-    elif "status" in changes and data.status != "done":
-        task.completed_at = None
+    updates: dict = {}
+    for field, value in data.items():
+        if value is not None:
+            updates[field] = value
 
     now = utc_now()
-    task.last_activity_at = now
-    task.updated_at = now
+    updates["last_activity_at"] = now
+    updates["updated_at"] = now
 
-    old_risk = task.risk_level
-    new_risk = _update_risk(task)
+    if "status" in data:
+        if data["status"] == "done":
+            updates["completed_at"] = now
+        elif task.get("status") == "done":
+            updates["completed_at"] = None
+
+    # Recalculate risk
+    merged = {**task, **updates}
+    updates["risk_level"] = compute_risk(
+        status=merged["status"],
+        priority=merged["priority"],
+        deadline=merged.get("deadline"),
+        last_activity_at=merged["last_activity_at"],
+    )
+
+    old_risk = task.get("risk_level")
+
+    db.tasks.update_one({"_id": task["_id"]}, {"$set": updates})
 
     if changes:
-        _log_activity(db, task.id, "updated", changes)
-    if old_risk != new_risk:
-        _log_activity(
-            db, task.id, "risk_changed", {"old": old_risk, "new": new_risk}
-        )
+        _log_activity(db, task["_id"], "updated", changes)
+    if old_risk != updates["risk_level"]:
+        _log_activity(db, task["_id"], "risk_changed", {"old": old_risk, "new": updates["risk_level"]})
 
-    db.commit()
-    db.refresh(task)
-    return task
+    return db.tasks.find_one({"_id": task["_id"]})
 
 
-def update_status(db: Session, task: Task, new_status: str) -> Task:
-    old_status = task.status
-    task.status = new_status
+def update_status(db: Database, task: dict, new_status: str) -> dict:
+    old_status = task["status"]
     now = utc_now()
-    task.last_activity_at = now
-    task.updated_at = now
+
+    updates: dict = {
+        "status": new_status,
+        "last_activity_at": now,
+        "updated_at": now,
+    }
 
     if new_status == "done":
-        task.completed_at = now
+        updates["completed_at"] = now
     elif old_status == "done":
-        task.completed_at = None
+        updates["completed_at"] = None
 
-    old_risk = task.risk_level
-    new_risk = _update_risk(task)
-
-    _log_activity(
-        db, task.id, "status_changed", {"old": old_status, "new": new_status}
+    merged = {**task, **updates}
+    new_risk = compute_risk(
+        status=merged["status"],
+        priority=merged["priority"],
+        deadline=merged.get("deadline"),
+        last_activity_at=merged["last_activity_at"],
     )
-    if old_risk != new_risk:
-        _log_activity(
-            db, task.id, "risk_changed", {"old": old_risk, "new": new_risk}
-        )
+    updates["risk_level"] = new_risk
 
-    db.commit()
-    db.refresh(task)
-    return task
+    db.tasks.update_one({"_id": task["_id"]}, {"$set": updates})
+
+    _log_activity(db, task["_id"], "status_changed", {"old": old_status, "new": new_status})
+    if task.get("risk_level") != new_risk:
+        _log_activity(db, task["_id"], "risk_changed", {"old": task.get("risk_level"), "new": new_risk})
+
+    return db.tasks.find_one({"_id": task["_id"]})
 
 
-def delete_task(db: Session, task: Task) -> None:
-    db.delete(task)
-    db.commit()
+def delete_task(db: Database, task_id: str) -> None:
+    db.tasks.delete_one({"_id": task_id})
+    db.activity_log.delete_many({"task_id": task_id})
+    db.notifications.delete_many({"task_id": task_id})
 
 
 def get_task_activity(
-    db: Session, task_id: str, page: int = 1, size: int = 50
-) -> tuple[list[ActivityLog], int]:
-    query = (
-        db.query(ActivityLog)
-        .filter(ActivityLog.task_id == task_id)
-        .order_by(ActivityLog.created_at.desc())
+    db: Database, task_id: str, page: int = 1, size: int = 50
+) -> tuple[list[dict], int]:
+    query = {"task_id": task_id}
+    total = db.activity_log.count_documents(query)
+    logs = list(
+        db.activity_log.find(query)
+        .sort("created_at", -1)
+        .skip((page - 1) * size)
+        .limit(size)
     )
-    total = query.count()
-    logs = query.offset((page - 1) * size).limit(size).all()
     return logs, total

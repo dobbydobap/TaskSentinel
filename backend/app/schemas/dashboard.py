@@ -63,5 +63,5 @@ class CalendarStreakResponse(BaseModel):
 class SweepResponse(BaseModel):
     tasks_checked: int
     risks_changed: int
-    snapshot_id: int
+    snapshot_id: str
     email_alerts: list[dict]

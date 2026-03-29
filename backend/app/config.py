@@ -3,7 +3,8 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     APP_NAME: str = "TaskSentinel"
-    DATABASE_URL: str = "sqlite:///./data/tasksentinel.db"
+    MONGODB_URL: str = "mongodb://localhost:27017"
+    MONGODB_DB_NAME: str = "tasksentinel"
 
     # JWT
     SECRET_KEY: str = "change-me-in-production-use-openssl-rand-hex-32"
@@ -15,7 +16,7 @@ class Settings(BaseSettings):
     MONITOR_API_KEY: str = "change-me-monitor-key"
 
     # CORS
-    FRONTEND_URL: str = "http://localhost:3000"
+    FRONTEND_URL: str = "http://localhost:3001"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

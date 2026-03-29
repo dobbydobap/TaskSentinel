@@ -4,13 +4,11 @@ from pydantic import BaseModel
 
 
 class ActivityResponse(BaseModel):
-    id: int
+    id: str
     task_id: str
     action: str
     detail: str | None
     created_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 class ActivityListResponse(BaseModel):

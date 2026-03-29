@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, Header, HTTPException
-
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from app.config import settings
 from app.database import get_db
@@ -19,7 +18,7 @@ def verify_monitor_key(x_monitor_key: str = Header(...)) -> str:
 
 @router.post("/sweep", response_model=SweepResponse)
 def trigger_sweep(
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     _key: str = Depends(verify_monitor_key),
 ):
     result = run_sweep(db)

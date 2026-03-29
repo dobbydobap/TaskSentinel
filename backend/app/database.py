@@ -1,39 +1,23 @@
-import os
-from collections.abc import Generator
-
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from pymongo import MongoClient
+from pymongo.database import Database
 
 from app.config import settings
 
-# Ensure data directory exists
-os.makedirs("data", exist_ok=True)
-
-engine = create_engine(
-    settings.DATABASE_URL,
-    connect_args={"check_same_thread": False},
-)
+client: MongoClient = MongoClient(settings.MONGODB_URL)
+db: Database = client[settings.MONGODB_DB_NAME]
 
 
-# Enable WAL mode for concurrent read/write
-@event.listens_for(engine, "connect")
-def set_sqlite_pragma(dbapi_connection, connection_record):
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
+def get_db() -> Database:
+    return db
 
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-class Base(DeclarativeBase):
-    pass
-
-
-def get_db() -> Generator[Session, None, None]:
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+def init_indexes() -> None:
+    """Create indexes for performance."""
+    db.users.create_index("email", unique=True)
+    db.tasks.create_index("user_id")
+    db.tasks.create_index("risk_level")
+    db.tasks.create_index("status")
+    db.tasks.create_index("deadline")
+    db.activity_log.create_index("task_id")
+    db.notifications.create_index([("task_id", 1), ("is_read", 1)])
+    db.risk_snapshots.create_index("snapshot_at")

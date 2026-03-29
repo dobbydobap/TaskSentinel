@@ -4,14 +4,12 @@ from pydantic import BaseModel
 
 
 class NotificationResponse(BaseModel):
-    id: int
+    id: str
     task_id: str
     type: str
     message: str
     is_read: bool
     created_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 class NotificationListResponse(BaseModel):
