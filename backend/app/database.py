@@ -13,6 +13,7 @@ def _get_client() -> MongoClient:
     if _client is None:
         _client = MongoClient(
             settings.MONGODB_URL,
+            tls=True,
             tlsCAFile=certifi.where(),
             serverSelectionTimeoutMS=10000,
             connectTimeoutMS=10000,
