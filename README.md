@@ -95,25 +95,48 @@ TaskSentinel/
 
 ## Getting Started
 
-### Prerequisites
+### Option 1: Docker (Recommended)
 
-- Python 3.10+
-- Node.js 18+
-- npm
+```bash
+# Clone the repo
+git clone https://github.com/dobbydobap/TaskSentinel.git
+cd TaskSentinel
 
-### Backend Setup
+# Create .env file with your MongoDB Atlas connection string
+cp backend/.env.example .env
+# Edit .env and set MONGODB_URL to your MongoDB Atlas connection string
 
+# Run with Docker Compose
+docker compose up --build
+```
+
+The app will be available at **http://localhost:3000**
+
+To run in background:
+```bash
+docker compose up --build -d
+```
+
+To stop:
+```bash
+docker compose down
+```
+
+### Option 2: Manual Setup
+
+**Prerequisites:** Python 3.11+, Node.js 18+, npm
+
+**Backend:**
 ```bash
 cd backend
 pip install -r requirements.txt
-cp .env.example .env        # Edit with your MONGODB_URL and SECRET_KEY
+cp .env.example ../.env     # Edit with your MONGODB_URL and SECRET_KEY
 python -m uvicorn app.main:app --port 8001 --reload
 ```
 
-The API will be available at `http://localhost:8001` with Swagger docs at `/docs`.
+API available at `http://localhost:8001` (Swagger docs at `/docs`)
 
-### Frontend Setup
-
+**Frontend:**
 ```bash
 cd frontend
 npm install
@@ -121,7 +144,7 @@ cp .env.example .env.local
 npm run dev -- -p 3001
 ```
 
-The app will be available at `http://localhost:3001`.
+App available at `http://localhost:3001`
 
 ### Google Apps Script Setup (Optional)
 
